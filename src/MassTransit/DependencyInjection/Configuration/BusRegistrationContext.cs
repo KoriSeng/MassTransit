@@ -5,6 +5,7 @@ namespace MassTransit.Configuration
     using System.Collections.Generic;
     using System.Linq;
     using DependencyInjection.Registration;
+    using Internals;
     using Microsoft.Extensions.DependencyInjection;
 
 
@@ -14,8 +15,8 @@ namespace MassTransit.Configuration
     {
         IConfigureReceiveEndpoint? _configureReceiveEndpoints;
 
-        public BusRegistrationContext(IServiceProvider provider, IContainerSelector selector)
-            : base(provider, selector)
+        public BusRegistrationContext(IServiceProvider provider, IContainerSelector selector, ISetScopedConsumeContext setScopedConsumeContext)
+            : base(provider, selector, setScopedConsumeContext)
         {
         }
 
@@ -32,8 +33,6 @@ namespace MassTransit.Configuration
             where T : IReceiveEndpointConfigurator
         {
             endpointNameFormatter ??= EndpointNameFormatter;
-
-            var configureReceiveEndpoint = GetConfigureReceiveEndpoints();
 
             var builder = new RegistrationFilterConfigurator();
             configureFilter?.Invoke(builder);
@@ -92,6 +91,11 @@ namespace MassTransit.Configuration
                 })
                 .ToList();
 
+            IEndpointDefinition? GetEndpointDefinitionByName(string name)
+            {
+                return endpointsWithName.SingleOrDefault(x => x.Name == name)?.Definition;
+            }
+
             IEnumerable<string> endpointNames = consumersByEndpoint.Select(x => x.Key)
                 .Union(sagasByEndpoint.Select(x => x.Key))
                 .Union(activitiesByExecuteEndpoint.Select(x => x.Key))
@@ -100,7 +104,7 @@ namespace MassTransit.Configuration
                 .Union(endpointsWithName.Select(x => x.Name))
                 .Except(activitiesByCompensateEndpoint.Select(x => x.Key));
 
-            var endpoints =
+            IList<Endpoint> endpoints = (
                 from e in endpointNames
                 join c in consumersByEndpoint on e equals c.Key into cs
                 from c in cs.DefaultIfEmpty()
@@ -120,79 +124,27 @@ namespace MassTransit.Configuration
                         ?? ea?.Select(x => (IEndpointDefinition)new DelegateEndpointDefinition(e, x, x.ExecuteEndpointDefinition)).Combine()
                         ?? f?.Select(x => (IEndpointDefinition)new DelegateEndpointDefinition(e, x, x.EndpointDefinition)).Combine()
                         ?? new NamedEndpointDefinition(e))
-                select new
-                {
-                    Name = e,
-                    Definition = ep,
-                    Consumers = c,
-                    Sagas = s,
-                    Activities = a,
-                    ExecuteActivities = ea,
-                    Futures = f
-                };
+                select new Endpoint(ep, c, s, a, ea, f)).ToList();
 
-            foreach (var endpoint in endpoints)
+            var needsServiceInstance = !(configurator is IServiceInstanceConfigurator<T>) && endpoints.Any(endpoint => endpoint.HasJobConsumers);
+            if (needsServiceInstance)
             {
-                configurator.ReceiveEndpoint(endpoint.Definition, endpointNameFormatter, cfg =>
+                var registration = Selector.GetRegistrations<IJobServiceRegistration>(this).SingleOrDefault();
+                registration ??= new JobServiceRegistration();
+
+                configurator.ReceiveEndpoint(registration.EndpointDefinition, endpointNameFormatter, endpointConfigurator =>
                 {
-                    configureReceiveEndpoint.Configure(endpoint.Definition.GetEndpointName(endpointNameFormatter), cfg);
+                    var options = new ServiceInstanceOptions().SetEndpointNameFormatter(endpointNameFormatter);
 
-                    if (endpoint.Consumers != null)
-                    {
-                        foreach (var consumer in endpoint.Consumers)
-                            ConfigureConsumer(consumer.ConsumerType, cfg);
-                    }
+                    var instanceConfigurator = new ServiceInstanceConfigurator<T>(configurator, options, endpointConfigurator);
 
-                    if (endpoint.Sagas != null)
-                    {
-                        foreach (var saga in endpoint.Sagas)
-                            ConfigureSaga(saga.SagaType, cfg);
-                    }
+                    registration.Configure(instanceConfigurator, this);
 
-                    if (endpoint.Activities != null)
-                    {
-                        foreach (var activity in endpoint.Activities)
-                        {
-                            var compensateEndpointName = activity.GetCompensateEndpointName(endpointNameFormatter);
-
-                            var compensateDefinition = activity.CompensateEndpointDefinition ??
-                                endpointsWithName.SingleOrDefault(x => x.Name == compensateEndpointName)?.Definition;
-
-                            if (compensateDefinition != null)
-                            {
-                                configurator.ReceiveEndpoint(compensateDefinition, endpointNameFormatter, compensateEndpointConfigurator =>
-                                {
-                                    configureReceiveEndpoint.Configure(compensateDefinition.GetEndpointName(endpointNameFormatter),
-                                        compensateEndpointConfigurator);
-
-                                    ConfigureActivity(activity.ActivityType, cfg, compensateEndpointConfigurator);
-                                });
-                            }
-                            else
-                            {
-                                configurator.ReceiveEndpoint(compensateEndpointName, compensateEndpointConfigurator =>
-                                {
-                                    configureReceiveEndpoint.Configure(compensateEndpointName, compensateEndpointConfigurator);
-
-                                    ConfigureActivity(activity.ActivityType, cfg, compensateEndpointConfigurator);
-                                });
-                            }
-                        }
-                    }
-
-                    if (endpoint.ExecuteActivities != null)
-                    {
-                        foreach (var activity in endpoint.ExecuteActivities)
-                            ConfigureExecuteActivity(activity.ActivityType, cfg);
-                    }
-
-                    if (endpoint.Futures != null)
-                    {
-                        foreach (var future in endpoint.Futures)
-                            ConfigureFuture(future.FutureType, cfg);
-                    }
+                    ConfigureTheEndpoints(endpoints, endpointNameFormatter, GetEndpointDefinitionByName, configurator, instanceConfigurator);
                 });
             }
+            else
+                ConfigureTheEndpoints(endpoints, endpointNameFormatter, GetEndpointDefinitionByName, configurator);
         }
 
         public IConfigureReceiveEndpoint GetConfigureReceiveEndpoints()
@@ -200,35 +152,95 @@ namespace MassTransit.Configuration
             if (_configureReceiveEndpoints != null)
                 return _configureReceiveEndpoints;
 
-            IEnumerable<IConfigureReceiveEndpoint> configureReceiveEndpoints = this.GetServices<IConfigureReceiveEndpoint>();
-
-            _configureReceiveEndpoints = configureReceiveEndpoints == null
-                ? new ConfigureReceiveEndpoint(Array.Empty<IConfigureReceiveEndpoint>())
-                : new ConfigureReceiveEndpoint(configureReceiveEndpoints.ToArray());
+            _configureReceiveEndpoints = Selector.GetConfigureReceiveEndpoints(this);
 
             return _configureReceiveEndpoints;
+        }
+
+        void ConfigureTheEndpoints<T>(IEnumerable<Endpoint> endpoints, IEndpointNameFormatter endpointNameFormatter,
+            Func<string, IEndpointDefinition?> getEndpointDefinitionByName,
+            IReceiveConfigurator<T> configurator, IReceiveConfigurator<T>? instanceConfigurator = null)
+            where T : IReceiveEndpointConfigurator
+        {
+            var configureReceiveEndpoint = GetConfigureReceiveEndpoints();
+
+            foreach (var endpoint in endpoints)
+            {
+                IReceiveConfigurator<T> useConfigurator = instanceConfigurator != null && endpoint.HasJobConsumers
+                    ? instanceConfigurator
+                    : configurator;
+
+                useConfigurator.ReceiveEndpoint(endpoint.Definition, endpointNameFormatter, cfg =>
+                {
+                    configureReceiveEndpoint.Configure(endpoint.Definition.GetEndpointName(endpointNameFormatter), cfg);
+
+                    foreach (var consumer in endpoint.Consumers)
+                        ConfigureConsumer(consumer.ConsumerType, cfg);
+
+                    foreach (var saga in endpoint.Sagas)
+                        ConfigureSaga(saga.SagaType, cfg);
+
+                    foreach (var activity in endpoint.Activities)
+                    {
+                        var compensateEndpointName = activity.GetCompensateEndpointName(endpointNameFormatter);
+
+                        var compensateDefinition = activity.CompensateEndpointDefinition ?? getEndpointDefinitionByName(compensateEndpointName);
+                        if (compensateDefinition != null)
+                        {
+                            configurator.ReceiveEndpoint(compensateDefinition, endpointNameFormatter, compensateEndpointConfigurator =>
+                            {
+                                configureReceiveEndpoint.Configure(compensateDefinition.GetEndpointName(endpointNameFormatter),
+                                    compensateEndpointConfigurator);
+
+                                ConfigureActivity(activity.ActivityType, cfg, compensateEndpointConfigurator);
+                            });
+                        }
+                        else
+                        {
+                            configurator.ReceiveEndpoint(compensateEndpointName, compensateEndpointConfigurator =>
+                            {
+                                configureReceiveEndpoint.Configure(compensateEndpointName, compensateEndpointConfigurator);
+
+                                ConfigureActivity(activity.ActivityType, cfg, compensateEndpointConfigurator);
+                            });
+                        }
+                    }
+
+                    foreach (var activity in endpoint.ExecuteActivities)
+                        ConfigureExecuteActivity(activity.ActivityType, cfg);
+
+                    foreach (var future in endpoint.Futures)
+                        ConfigureFuture(future.FutureType, cfg);
+                });
+            }
         }
 
         static void NoFilter(IRegistrationFilterConfigurator configurator)
         {
         }
 
-
-        class ConfigureReceiveEndpoint :
-            IConfigureReceiveEndpoint
+        class Endpoint
         {
-            readonly IConfigureReceiveEndpoint[] _configurators;
-
-            public ConfigureReceiveEndpoint(IConfigureReceiveEndpoint[] configurators)
+            public Endpoint(IEndpointDefinition definition, IEnumerable<IConsumerDefinition>? consumers, IEnumerable<ISagaDefinition>? sagas,
+                IEnumerable<IActivityDefinition>? activities, IEnumerable<IExecuteActivityDefinition>? executeActivities,
+                IEnumerable<IFutureDefinition>? futures)
             {
-                _configurators = configurators;
+                Definition = definition;
+                Consumers = consumers?.ToList() ?? new List<IConsumerDefinition>();
+                Sagas = sagas?.ToList() ?? new List<ISagaDefinition>();
+                Activities = activities?.ToList() ?? new List<IActivityDefinition>();
+                ExecuteActivities = executeActivities?.ToList() ?? new List<IExecuteActivityDefinition>();
+                Futures = futures?.ToList() ?? new List<IFutureDefinition>();
             }
 
-            public void Configure(string name, IReceiveEndpointConfigurator configurator)
-            {
-                for (var i = 0; i < _configurators.Length; i++)
-                    _configurators[i].Configure(name, configurator);
-            }
+            public IEndpointDefinition Definition { get; }
+            public List<IConsumerDefinition> Consumers { get; }
+            public List<ISagaDefinition> Sagas { get; }
+            public List<IActivityDefinition> Activities { get; }
+            public List<IExecuteActivityDefinition> ExecuteActivities { get; }
+            public List<IFutureDefinition> Futures { get; }
+
+            public bool HasJobConsumers => Consumers.Any(c => c.ConsumerType.ClosesType(typeof(IJobConsumer<>)));
         }
     }
 }

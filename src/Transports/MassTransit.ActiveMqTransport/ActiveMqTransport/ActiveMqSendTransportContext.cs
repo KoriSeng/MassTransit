@@ -79,19 +79,14 @@ namespace MassTransit.ActiveMqTransport
             sendContext.CancellationToken.ThrowIfCancellationRequested();
 
             var destination = context.ReplyDestination ?? await sessionContext.GetDestination(EntityName, _destinationType).ConfigureAwait(false);
-            var producer = await sessionContext.CreateMessageProducer(destination).ConfigureAwait(false);
 
-            var transportMessage = sessionContext.CreateBytesMessage();
+            var transportMessage = sessionContext.CreateBytesMessage(context.Body.GetBytes());
 
             SetResponseTo(transportMessage, context, sessionContext);
-
-            transportMessage.Content = context.Body.GetBytes();
 
             transportMessage.Properties.SetHeaders(context.Headers);
 
             transportMessage.Properties[MessageHeaders.ContentType] = context.ContentType.ToString();
-
-            transportMessage.NMSDeliveryMode = context.Durable ? MsgDeliveryMode.Persistent : MsgDeliveryMode.NonPersistent;
 
             if (context.MessageId.HasValue)
                 transportMessage.NMSMessageId = context.MessageId.ToString();
@@ -99,11 +94,14 @@ namespace MassTransit.ActiveMqTransport
             if (context.CorrelationId.HasValue)
                 transportMessage.NMSCorrelationID = context.CorrelationId.ToString();
 
+            transportMessage.NMSDeliveryMode = context.Durable ? MsgDeliveryMode.Persistent : MsgDeliveryMode.NonPersistent;
+
             if (context.TimeToLive.HasValue)
                 transportMessage.NMSTimeToLive = context.TimeToLive > TimeSpan.Zero ? context.TimeToLive.Value : TimeSpan.FromSeconds(1);
+            else
+                transportMessage.NMSTimeToLive = NMSConstants.defaultTimeToLive;
 
-            if (context.Priority.HasValue)
-                transportMessage.NMSPriority = context.Priority.Value;
+            transportMessage.NMSPriority = context.Priority ?? NMSConstants.defaultPriority;
 
             if (transportMessage is Message message)
             {
@@ -123,9 +121,7 @@ namespace MassTransit.ActiveMqTransport
                     transportMessage.Properties["AMQ_SCHEDULED_DELAY"] = (long)delay.Value;
             }
 
-            var publishTask = Task.Run(() => producer.Send(transportMessage), context.CancellationToken);
-
-            await publishTask.OrCanceled(context.CancellationToken).ConfigureAwait(false);
+            await sessionContext.SendAsync(destination, transportMessage, context.CancellationToken).ConfigureAwait(false);
         }
 
         static void SetResponseTo(IMessage transportMessage, SendContext context, SessionContext sessionContext)

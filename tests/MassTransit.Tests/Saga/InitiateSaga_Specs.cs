@@ -39,17 +39,17 @@ namespace MassTransit.Tests.Saga
         {
             base.ConfigureInMemoryBus(configurator);
 
-            configurator.UseRetry(x => x.None());
+            configurator.UseMessageRetry(x => x.None());
         }
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
-            configurator.UseRetry(x => x.Immediate(2));
+            configurator.UseMessageRetry(x => x.Immediate(2));
             configurator.Saga(_repository);
         }
 
         Guid _sagaId;
-        readonly InMemorySagaRepository<SimpleSaga> _repository;
+        readonly ISagaRepository<SimpleSaga> _repository;
     }
 
 
@@ -92,7 +92,7 @@ namespace MassTransit.Tests.Saga
         }
 
         Guid _sagaId;
-        readonly InMemorySagaRepository<SimpleSaga> _repository;
+        readonly ISagaRepository<SimpleSaga> _repository;
     }
 
 
@@ -131,7 +131,7 @@ namespace MassTransit.Tests.Saga
         }
 
         Guid _sagaId;
-        readonly InMemorySagaRepository<SimpleSaga> _repository;
+        readonly ISagaRepository<SimpleSaga> _repository;
     }
 
 
@@ -170,7 +170,7 @@ namespace MassTransit.Tests.Saga
         }
 
         Guid _sagaId;
-        readonly InMemorySagaRepository<SimpleSaga> _repository;
+        readonly ISagaRepository<SimpleSaga> _repository;
     }
 
 

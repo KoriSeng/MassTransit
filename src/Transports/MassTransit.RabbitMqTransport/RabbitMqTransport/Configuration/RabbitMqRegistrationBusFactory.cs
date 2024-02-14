@@ -35,7 +35,7 @@ namespace MassTransit.RabbitMqTransport.Configuration
 
             var options = context.GetRequiredService<IOptionsMonitor<RabbitMqTransportOptions>>().Get(busName);
 
-            configurator.Host(options.Host, options.Port, options.VHost, h =>
+            configurator.Host(options.Host, options.Port, options.VHost, options.ConnectionName, h =>
             {
                 if (!string.IsNullOrWhiteSpace(options.User))
                     h.Username(options.User);
@@ -47,7 +47,7 @@ namespace MassTransit.RabbitMqTransport.Configuration
                 {
                     h.UseSsl(s =>
                     {
-                        var sslOptions = context.GetRequiredService<IOptions<RabbitMqSslOptions>>().Value;
+                        var sslOptions = context.GetRequiredService<IOptionsMonitor<RabbitMqSslOptions>>().Get(busName);
 
                         if (!string.IsNullOrWhiteSpace(sslOptions.ServerName))
                             s.ServerName = sslOptions.ServerName;
@@ -56,6 +56,8 @@ namespace MassTransit.RabbitMqTransport.Configuration
                         if (!string.IsNullOrWhiteSpace(sslOptions.CertPassphrase))
                             s.CertificatePassphrase = sslOptions.CertPassphrase;
                         s.UseCertificateAsAuthenticationIdentity = sslOptions.CertIdentity;
+
+                        s.Protocol = sslOptions.Protocol;
 
                         if (sslOptions.Trust)
                         {

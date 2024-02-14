@@ -76,16 +76,17 @@ namespace MassTransit.KafkaIntegration.Checkpoints
             {
                 try
                 {
-                    for (var i = 0; i < _settings.CheckpointMessageCount; i++)
+                    while (batch.Count < _settings.CheckpointMessageCount)
                     {
-                        var confirmation = await _channel.Reader.ReadAsync(batchToken.Token).ConfigureAwait(false);
-
-                        await confirmation.Confirmed.OrCanceled(_cancellationToken).ConfigureAwait(false);
-
-                        batch.Add(confirmation);
-
-                        if (await _channel.Reader.WaitToReadAsync(batchToken.Token).ConfigureAwait(false) == false)
+                        if (_channel.Reader.TryRead(out var confirmation))
+                        {
+                            await confirmation.Confirmed.OrCanceled(_cancellationToken).ConfigureAwait(false);
+                            batch.Add(confirmation);
+                        }
+                        else if (await _channel.Reader.WaitToReadAsync(batchToken.Token).ConfigureAwait(false) == false)
+                        {
                             break;
+                        }
                     }
                 }
                 catch (Exception) when (batch.Count > 0)

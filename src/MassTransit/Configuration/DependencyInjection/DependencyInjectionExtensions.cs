@@ -15,10 +15,24 @@ namespace MassTransit
         /// Creates a single scope for the receive endpoint that is used by all consumers, sagas, messages, etc.
         /// </summary>
         /// <param name="configurator"></param>
+        /// <param name="context"></param>
+        public static void UseServiceScope(this IConsumePipeConfigurator configurator, IRegistrationContext context)
+        {
+            var scopeProvider = new ConsumeScopeProvider(context);
+            var specification = new FilterPipeSpecification<ConsumeContext>(new ScopeConsumeFilter(scopeProvider));
+
+            configurator.AddPrePipeSpecification(specification);
+        }
+
+        /// <summary>
+        /// Creates a single scope for the receive endpoint that is used by all consumers, sagas, messages, etc.
+        /// </summary>
+        /// <param name="configurator"></param>
         /// <param name="serviceProvider"></param>
+        [Obsolete("Use the IRegistrationContext overload instead. Visit https://masstransit.io/obsolete for details.")]
         public static void UseServiceScope(this IConsumePipeConfigurator configurator, IServiceProvider serviceProvider)
         {
-            var scopeProvider = new ConsumeScopeProvider(serviceProvider);
+            var scopeProvider = new ConsumeScopeProvider(serviceProvider, LegacySetScopedConsumeContext.Instance);
             var specification = new FilterPipeSpecification<ConsumeContext>(new ScopeConsumeFilter(scopeProvider));
 
             configurator.AddPrePipeSpecification(specification);
@@ -28,7 +42,23 @@ namespace MassTransit
         /// Creates a scope for each message type, compatible with UseMessageRetry and UseInMemoryOutbox
         /// </summary>
         /// <param name="configurator"></param>
+        /// <param name="context"></param>
+        public static void UseMessageScope(this IConsumePipeConfigurator configurator, IRegistrationContext context)
+        {
+            if (configurator == null)
+                throw new ArgumentNullException(nameof(configurator));
+            if (context == null)
+                throw new ArgumentNullException(nameof(context));
+
+            var observer = new MessageScopeConfigurationObserver(configurator, context);
+        }
+
+        /// <summary>
+        /// Creates a scope for each message type, compatible with UseMessageRetry and UseInMemoryOutbox
+        /// </summary>
+        /// <param name="configurator"></param>
         /// <param name="serviceProvider"></param>
+        [Obsolete("Use the IRegistrationContext overload instead. Visit https://masstransit.io/obsolete for details.")]
         public static void UseMessageScope(this IConsumePipeConfigurator configurator, IServiceProvider serviceProvider)
         {
             if (configurator == null)
@@ -48,6 +78,8 @@ namespace MassTransit
             where T : class, ISaga
         {
             collection.TryAddSingleton(new IndexedSagaDictionary<T>());
+            collection.RegisterLoadSagaRepository<T, InMemorySagaRepositoryContextFactory<T>>();
+            collection.RegisterQuerySagaRepository<T, InMemorySagaRepositoryContextFactory<T>>();
             collection.RegisterSagaRepository<T, IndexedSagaDictionary<T>, InMemorySagaConsumeContextFactory<T>, InMemorySagaRepositoryContextFactory<T>>();
         }
 
@@ -83,7 +115,7 @@ namespace MassTransit
         /// client that is not explicitly registered using AddRequestClient.
         /// </summary>
         /// <param name="collection"></param>
-        [Obsolete("This method is no longer required, the Generic Request Client is automatically registered")]
+        [Obsolete("Remove, the generic request client is automatically registered. Visit https://masstransit.io/obsolete for details.")]
         public static IServiceCollection AddGenericRequestClient(this IServiceCollection collection)
         {
             return collection;

@@ -19,12 +19,12 @@ namespace MassTransit.DependencyInjection.Registration
         where TStateMachine : class, SagaStateMachine<TInstance>
         where TInstance : class, SagaStateMachineInstance
     {
-        readonly List<Action<ISagaConfigurator<TInstance>>> _configureActions;
+        readonly List<Action<IRegistrationContext, ISagaConfigurator<TInstance>>> _configureActions;
         ISagaDefinition<TInstance> _definition;
 
         public SagaStateMachineRegistration()
         {
-            _configureActions = new List<Action<ISagaConfigurator<TInstance>>>();
+            _configureActions = new List<Action<IRegistrationContext, ISagaConfigurator<TInstance>>>();
             IncludeInConfigureEndpoints = !Type.HasAttribute<ExcludeFromConfigureEndpointsAttribute>();
         }
 
@@ -32,35 +32,35 @@ namespace MassTransit.DependencyInjection.Registration
 
         public bool IncludeInConfigureEndpoints { get; set; }
 
-        public void AddConfigureAction<T>(Action<ISagaConfigurator<T>> configure)
+        public void AddConfigureAction<T>(Action<IRegistrationContext, ISagaConfigurator<T>> configure)
             where T : class, ISaga
         {
-            if (configure is Action<ISagaConfigurator<TInstance>> action)
+            if (configure is Action<IRegistrationContext, ISagaConfigurator<TInstance>> action)
                 _configureActions.Add(action);
         }
 
-        public void Configure(IReceiveEndpointConfigurator configurator, IServiceProvider provider)
+        public void Configure(IReceiveEndpointConfigurator configurator, IRegistrationContext context)
         {
-            var stateMachine = provider.GetRequiredService<SagaStateMachine<TInstance>>();
-            var repository = provider.GetRequiredService<ISagaRepository<TInstance>>();
+            var stateMachine = context.GetRequiredService<SagaStateMachine<TInstance>>();
+            ISagaRepository<TInstance> repository = new DependencyInjectionSagaRepository<TInstance>(context);
 
-            var decoratorRegistration = provider.GetService<ISagaRepositoryDecoratorRegistration<TInstance>>();
+            var decoratorRegistration = context.GetService<ISagaRepositoryDecoratorRegistration<TInstance>>();
             if (decoratorRegistration != null)
                 repository = decoratorRegistration.DecorateSagaRepository(repository);
 
             var stateMachineConfigurator = new StateMachineSagaConfigurator<TInstance>(stateMachine, repository, configurator);
 
-            GetSagaDefinition(provider)
-                .Configure(configurator, stateMachineConfigurator);
+            GetSagaDefinition(context)
+                .Configure(configurator, stateMachineConfigurator, context);
 
-            foreach (Action<ISagaConfigurator<TInstance>> action in _configureActions)
-                action(stateMachineConfigurator);
+            foreach (Action<IRegistrationContext, ISagaConfigurator<TInstance>> action in _configureActions)
+                action(context, stateMachineConfigurator);
 
-            IEnumerable<IEventObserver<TInstance>> eventObservers = provider.GetServices<IEventObserver<TInstance>>();
+            IEnumerable<IEventObserver<TInstance>> eventObservers = context.GetServices<IEventObserver<TInstance>>();
             foreach (IEventObserver<TInstance> eventObserver in eventObservers)
                 stateMachine.ConnectEventObserver(eventObserver);
 
-            IEnumerable<IStateObserver<TInstance>> stateObservers = provider.GetServices<IStateObserver<TInstance>>();
+            IEnumerable<IStateObserver<TInstance>> stateObservers = context.GetServices<IStateObserver<TInstance>>();
             foreach (IStateObserver<TInstance> stateObserver in stateObservers)
                 stateMachine.ConnectStateObserver(stateObserver);
 
@@ -73,9 +73,9 @@ namespace MassTransit.DependencyInjection.Registration
             IncludeInConfigureEndpoints = false;
         }
 
-        ISagaDefinition ISagaRegistration.GetDefinition(IServiceProvider provider)
+        ISagaDefinition ISagaRegistration.GetDefinition(IRegistrationContext context)
         {
-            return GetSagaDefinition(provider);
+            return GetSagaDefinition(context);
         }
 
         ISagaDefinition<TInstance> GetSagaDefinition(IServiceProvider provider)

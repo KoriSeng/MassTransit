@@ -4,7 +4,7 @@
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <AssemblyName>mtbench</AssemblyName>
     <RootNamespace>MassTransitBenchmark</RootNamespace>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -12,7 +12,6 @@
     <ProjectReference Include="..\..\src\Transports\MassTransit.ActiveMqTransport\MassTransit.ActiveMqTransport.csproj" />
     <ProjectReference Include="..\..\src\Transports\MassTransit.AmazonSqsTransport\MassTransit.AmazonSqsTransport.csproj" />
     <ProjectReference Include="..\..\src\Transports\MassTransit.Azure.ServiceBus.Core\MassTransit.Azure.ServiceBus.Core.csproj" />
-    <ProjectReference Include="..\..\src\Transports\MassTransit.GrpcTransport\MassTransit.GrpcTransport.csproj" />
     <ProjectReference Include="..\..\src\Transports\MassTransit.KafkaIntegration\MassTransit.KafkaIntegration.csproj" />
     <ProjectReference Include="..\..\src\Transports\MassTransit.RabbitMqTransport\MassTransit.RabbitMqTransport.csproj" />
     <ProjectReference Include="..\..\src\MassTransit\MassTransit.csproj" />
@@ -20,5 +19,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
   </ItemGroup>
 </Project>

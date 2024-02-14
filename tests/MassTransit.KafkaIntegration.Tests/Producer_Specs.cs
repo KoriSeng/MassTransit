@@ -34,7 +34,6 @@ namespace MassTransit.KafkaIntegration.Tests
                         r.AddConsumer<TestKafkaMessageConsumer<KafkaMessage>>();
 
                         r.AddProducer<KafkaMessage>(Topic, producerConfig);
-
                         r.UsingKafka((context, k) =>
                         {
                             k.TopicEndpoint<KafkaMessage>(Topic, consumerConfig, c =>
@@ -98,6 +97,60 @@ namespace MassTransit.KafkaIntegration.Tests
         public interface KafkaMessage
         {
             string Text { get; }
+        }
+    }
+
+
+    public class Producer_Provider_Specs
+    {
+        const string Topic = "producer-provider";
+
+        [Test]
+        public async Task Should_receive_messages()
+        {
+            var consumerConfig = new ConsumerConfig { GroupId = nameof(Producer_Provider_Specs) };
+
+            await using var provider = new ServiceCollection()
+                .ConfigureKafkaTestOptions(options =>
+                {
+                    options.CreateTopicsIfNotExists = true;
+                    options.TopicNames = new[] { Topic };
+                })
+                .AddMassTransitTestHarness(x =>
+                {
+                    x.AddTaskCompletionSource<ConsumeContext<KafkaMessage>>();
+
+                    x.SetTestTimeouts(testInactivityTimeout: TimeSpan.FromSeconds(15));
+                    x.AddRider(r =>
+                    {
+                        r.UsingKafka((_, k) =>
+                        {
+                            k.TopicEndpoint<KafkaMessage>(Topic, consumerConfig, c =>
+                            {
+                                c.AutoOffsetReset = AutoOffsetReset.Earliest;
+                                c.Handler<KafkaMessage>(_ => Task.CompletedTask);
+                            });
+                        });
+                    });
+                })
+                .BuildServiceProvider(true);
+
+            var harness = provider.GetTestHarness();
+
+            await harness.Start();
+
+            var producerProvider = harness.Scope.ServiceProvider.GetRequiredService<ITopicProducerProvider>();
+
+            ITopicProducer<KafkaMessage> producer = producerProvider.GetProducer<KafkaMessage>(new Uri($"topic:{Topic}"));
+
+            await producer.Produce(new { }, harness.CancellationToken);
+
+            await harness.Consumed.Any<KafkaMessage>();
+        }
+
+
+        public interface KafkaMessage
+        {
         }
     }
 

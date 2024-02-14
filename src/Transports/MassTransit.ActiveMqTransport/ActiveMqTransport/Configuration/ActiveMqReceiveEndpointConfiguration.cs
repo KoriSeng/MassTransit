@@ -51,12 +51,15 @@
         {
             var context = CreateActiveMqReceiveEndpointContext();
 
-            _sessionConfigurator.UseFilter(new ConfigureActiveMqTopologyFilter<ReceiveSettings>(_settings, context.BrokerTopology));
+            _sessionConfigurator.UseFilter(new ConfigureActiveMqTopologyFilter<ReceiveSettings>(_settings, context.BrokerTopology, context));
 
             if (_hostConfiguration.DeployTopologyOnly)
                 _sessionConfigurator.UseFilter(new TransportReadyFilter<SessionContext>(context));
             else
+            {
+                _sessionConfigurator.UseFilter(new ReceiveEndpointDependencyFilter<SessionContext>(context));
                 _sessionConfigurator.UseFilter(new ActiveMqConsumerFilter(context));
+            }
 
             IPipe<SessionContext> sessionPipe = _sessionConfigurator.Build();
 
@@ -69,7 +72,7 @@
 
                 var brokerTopology = publishTopology.GetPublishBrokerTopology();
 
-                transport.PreStartPipe = new ConfigureActiveMqTopologyFilter<IPublishTopology>(publishTopology, brokerTopology).ToPipe();
+                transport.PreStartPipe = new ConfigureActiveMqTopologyFilter<IPublishTopology>(publishTopology, brokerTopology, context).ToPipe();
             }
 
             var receiveEndpoint = new ReceiveEndpoint(transport, context);

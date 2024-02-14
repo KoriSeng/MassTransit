@@ -34,10 +34,21 @@ namespace MassTransit.Configuration
 
             IRiderRegistrationContext CreateRegistrationContext(IServiceProvider provider)
             {
-                var registration = CreateRegistration(provider);
+                var setter = provider.GetRequiredService<Bind<IBus, TRider, ISetScopedConsumeContext>>();
+                var registration = CreateRegistration(provider, setter.Value);
                 return new RiderRegistrationContext(registration, Registrar);
             }
 
+            static Bind<IBus, TRider, IScopedConsumeContextProvider> CreateScopeProvider(IServiceProvider provider)
+            {
+                var global = provider.GetRequiredService<IScopedConsumeContextProvider>();
+                return Bind<IBus, TRider>.Create((IScopedConsumeContextProvider)new TypedScopedConsumeContextProvider(global));
+            }
+
+            this.TryAddScoped(CreateScopeProvider);
+
+            this.AddSingleton(_ => Bind<IBus, TRider>.Create((ISetScopedConsumeContext)new SetScopedConsumeContext(provider =>
+                provider.GetRequiredService<Bind<IBus, TRider, IScopedConsumeContextProvider>>().Value)));
             this.AddSingleton(provider => Bind<IBus, TRider>.Create(CreateRegistrationContext(provider)));
             this.AddSingleton(provider =>
                 Bind<IBus>.Create(riderFactory.CreateRider(provider.GetRequiredService<Bind<IBus, TRider, IRiderRegistrationContext>>().Value)));
@@ -78,10 +89,21 @@ namespace MassTransit.Configuration
 
             IRiderRegistrationContext CreateRegistrationContext(IServiceProvider provider)
             {
-                var registration = CreateRegistration(provider);
+                var setter = provider.GetRequiredService<Bind<TBus, TRider, ISetScopedConsumeContext>>();
+                var registration = CreateRegistration(provider, setter.Value);
                 return new RiderRegistrationContext(registration, Registrar);
             }
 
+            static Bind<TBus, TRider, IScopedConsumeContextProvider> CreateScopeProvider(IServiceProvider provider)
+            {
+                var global = provider.GetRequiredService<IScopedConsumeContextProvider>();
+                return Bind<TBus, TRider>.Create((IScopedConsumeContextProvider)new TypedScopedConsumeContextProvider(global));
+            }
+
+            this.TryAddScoped(CreateScopeProvider);
+
+            this.AddSingleton(_ => Bind<TBus, TRider>.Create((ISetScopedConsumeContext)new SetScopedConsumeContext(provider =>
+                provider.GetRequiredService<Bind<TBus, TRider, IScopedConsumeContextProvider>>().Value)));
             this.AddSingleton(provider => Bind<TBus, TRider>.Create(CreateRegistrationContext(provider)));
             this.AddSingleton(provider =>
                 Bind<TBus>.Create(riderFactory.CreateRider(provider.GetRequiredService<Bind<TBus, TRider, IRiderRegistrationContext>>().Value)));

@@ -73,6 +73,22 @@ namespace MassTransit
         }
 
         /// <summary>
+        /// Configure the Job Service saga state machines to use Entity Framework Core as the saga repository
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="configure"></param>
+        /// <returns></returns>
+        public static IJobSagaRegistrationConfigurator EntityFrameworkRepository(this IJobSagaRegistrationConfigurator configurator,
+            Action<IEntityFrameworkSagaRepositoryConfigurator> configure = null)
+        {
+            var registrationProvider = new EntityFrameworkSagaRepositoryRegistrationProvider(configure);
+
+            configurator.UseRepositoryRegistrationProvider(registrationProvider);
+
+            return configurator;
+        }
+
+        /// <summary>
         /// Use the EntityFramework saga repository for sagas configured by type (without a specific generic call to AddSaga/AddSagaStateMachine)
         /// </summary>
         /// <param name="configurator"></param>
@@ -229,6 +245,32 @@ namespace MassTransit
         public static IEntityFrameworkSagaRepositoryConfigurator UseMySql(this IEntityFrameworkSagaRepositoryConfigurator configurator)
         {
             configurator.LockStatementProvider = new MySqlLockStatementProvider();
+
+            return configurator;
+        }
+
+        /// <summary>
+        /// Configure the repository for use with SQLite
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        public static IEntityFrameworkSagaRepositoryConfigurator<T> UseSqlite<T>(this IEntityFrameworkSagaRepositoryConfigurator<T> configurator)
+            where T : class, ISaga
+        {
+            configurator.LockStatementProvider = new SqliteLockStatementProvider();
+
+            return configurator;
+        }
+
+        /// <summary>
+        /// Configure the repository for use with SQLite
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <returns></returns>
+        public static IEntityFrameworkSagaRepositoryConfigurator UseSqlite(this IEntityFrameworkSagaRepositoryConfigurator configurator)
+        {
+            configurator.LockStatementProvider = new SqliteLockStatementProvider();
 
             return configurator;
         }

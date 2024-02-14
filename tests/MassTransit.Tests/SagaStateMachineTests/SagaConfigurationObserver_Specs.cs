@@ -9,7 +9,7 @@
     public class SagaConfigurationObserver_Specs
     {
         readonly TestStateMachine _machine;
-        readonly InMemorySagaRepository<Instance> _repository;
+        readonly ISagaRepository<Instance> _repository;
 
         public SagaConfigurationObserver_Specs()
         {
@@ -28,7 +28,7 @@
 
                 cfg.ReceiveEndpoint("hello", e =>
                 {
-                    e.UseRetry(x => x.Immediate(1));
+                    e.UseMessageRetry(x => x.Immediate(1));
 
                     e.StateMachineSaga(_machine, _repository, x =>
                     {

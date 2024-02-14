@@ -112,9 +112,25 @@
             MessageLockContext lockContext = new ServiceBusMessageLockContext(messageReceiver, message);
             var context = new ServiceBusReceiveContext(message, _context, lockContext, _clientContext);
 
+            CancellationTokenSource cancellationTokenSource = null;
+            CancellationTokenRegistration timeoutRegistration = default;
             CancellationTokenRegistration registration = default;
             if (cancellationToken.CanBeCanceled)
-                registration = cancellationToken.Register(context.Cancel);
+            {
+                void Callback()
+                {
+                    if (_context.ConsumerStopTimeout.HasValue)
+                    {
+                        cancellationTokenSource = new CancellationTokenSource(_context.ConsumerStopTimeout.Value);
+                        timeoutRegistration = cancellationTokenSource.Token.Register(context.Cancel);
+                    }
+                    else
+                        context.Cancel();
+                }
+
+                registration = cancellationToken.Register(Callback);
+            }
+
 
             try
             {
@@ -126,7 +142,11 @@
             }
             finally
             {
+                timeoutRegistration.Dispose();
                 registration.Dispose();
+
+                cancellationTokenSource?.Dispose();
+
                 context.Dispose();
             }
         }
@@ -135,7 +155,8 @@
         {
             try
             {
-                await Dispatch(context.SequenceNumber, context, ctx => new ServiceBusReceiveLockContext(ctx, lockContext, message)).ConfigureAwait(false);
+                await Dispatch(context.SequenceNumber, context, new ServiceBusReceiveLockContext(_context.InputAddress, lockContext, message))
+                    .ConfigureAwait(false);
             }
             catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.SessionLockLost)
             {

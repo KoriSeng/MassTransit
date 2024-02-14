@@ -5,6 +5,7 @@
     using System.Threading.Tasks;
     using Apache.NMS;
     using Apache.NMS.Util;
+    using Internals;
     using MassTransit.Middleware;
     using Topology;
     using Transports;
@@ -40,7 +41,7 @@
                 {
                     await _messageProducerCache.Stop(CancellationToken.None).ConfigureAwait(false);
 
-                    _session.Close();
+                    await _session.CloseAsync().ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -91,19 +92,33 @@
             return _executor.Run(() => SessionUtil.GetDestination(_session, destinationName, destinationType), CancellationToken);
         }
 
-        public Task<IMessageProducer> CreateMessageProducer(IDestination destination)
-        {
-            return _messageProducerCache.GetMessageProducer(destination, x => _executor.Run(() => _session.CreateProducer(x), CancellationToken));
-        }
-
         public Task<IMessageConsumer> CreateMessageConsumer(IDestination destination, string selector, bool noLocal)
         {
-            return _executor.Run(() => _session.CreateConsumer(destination, selector, noLocal), CancellationToken);
+            return _executor.Run(() => _session.CreateConsumerAsync(destination, selector, noLocal), CancellationToken);
         }
 
-        public IBytesMessage CreateBytesMessage()
+        public async Task SendAsync(IDestination destination, IMessage message, CancellationToken cancellationToken)
         {
-            return _session.CreateBytesMessage();
+            var producer = await _messageProducerCache.GetMessageProducer(destination,
+                x => _executor.Run(() => _session.CreateProducerAsync(x), cancellationToken)).ConfigureAwait(false);
+
+            await _executor.Run(() => producer.SendAsync(message, message.NMSDeliveryMode, message.NMSPriority, message.NMSTimeToLive)
+                .OrCanceled(cancellationToken), cancellationToken).ConfigureAwait(false);
+        }
+
+        public IBytesMessage CreateBytesMessage(byte[] content)
+        {
+            return _session.CreateBytesMessage(content);
+        }
+
+        public ITextMessage CreateTextMessage(string content)
+        {
+            return _session.CreateTextMessage(content);
+        }
+
+        public IMessage CreateMessage()
+        {
+            return _session.CreateMessage();
         }
 
         public Task DeleteTopic(string topicName)

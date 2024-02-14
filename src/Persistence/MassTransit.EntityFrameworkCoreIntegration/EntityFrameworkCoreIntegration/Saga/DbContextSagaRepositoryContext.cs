@@ -99,8 +99,6 @@ namespace MassTransit.EntityFrameworkCoreIntegration.Saga
             await _inUse.WaitAsync(context.CancellationToken).ConfigureAwait(false);
             try
             {
-                _dbContext.Set<TSaga>().Update(context.Saga);
-
                 await _dbContext.SaveChangesAsync(CancellationToken).ConfigureAwait(false);
             }
             finally
@@ -154,7 +152,8 @@ namespace MassTransit.EntityFrameworkCoreIntegration.Saga
 
     public class DbContextSagaRepositoryContext<TSaga> :
         BasePipeContext,
-        SagaRepositoryContext<TSaga>
+        QuerySagaRepositoryContext<TSaga>,
+        LoadSagaRepositoryContext<TSaga>
         where TSaga : class, ISaga
     {
         readonly DbContext _dbContext;
@@ -163,6 +162,13 @@ namespace MassTransit.EntityFrameworkCoreIntegration.Saga
             : base(cancellationToken)
         {
             _dbContext = dbContext;
+        }
+
+        public Task<TSaga> Load(Guid correlationId)
+        {
+            return _dbContext.Set<TSaga>()
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.CorrelationId == correlationId);
         }
 
         public async Task<SagaRepositoryQueryContext<TSaga>> Query(ISagaQuery<TSaga> query, CancellationToken cancellationToken)
@@ -175,13 +181,6 @@ namespace MassTransit.EntityFrameworkCoreIntegration.Saga
                 .ConfigureAwait(false);
 
             return new DefaultSagaRepositoryQueryContext<TSaga>(this, results);
-        }
-
-        public Task<TSaga> Load(Guid correlationId)
-        {
-            return _dbContext.Set<TSaga>()
-                .AsNoTracking()
-                .SingleOrDefaultAsync(x => x.CorrelationId == correlationId);
         }
     }
 }

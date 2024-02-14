@@ -17,12 +17,12 @@ namespace MassTransit.DependencyInjection.Registration
         ISagaRegistration
         where TSaga : class, ISaga
     {
-        readonly List<Action<ISagaConfigurator<TSaga>>> _configureActions;
+        readonly List<Action<IRegistrationContext, ISagaConfigurator<TSaga>>> _configureActions;
         ISagaDefinition<TSaga> _definition;
 
         public SagaRegistration()
         {
-            _configureActions = new List<Action<ISagaConfigurator<TSaga>>>();
+            _configureActions = new List<Action<IRegistrationContext, ISagaConfigurator<TSaga>>>();
             IncludeInConfigureEndpoints = !Type.HasAttribute<ExcludeFromConfigureEndpointsAttribute>();
         }
 
@@ -30,27 +30,27 @@ namespace MassTransit.DependencyInjection.Registration
 
         public bool IncludeInConfigureEndpoints { get; set; }
 
-        void ISagaRegistration.AddConfigureAction<T>(Action<ISagaConfigurator<T>> configure)
+        void ISagaRegistration.AddConfigureAction<T>(Action<IRegistrationContext, ISagaConfigurator<T>> configure)
         {
-            if (configure is Action<ISagaConfigurator<TSaga>> action)
+            if (configure is Action<IRegistrationContext, ISagaConfigurator<TSaga>> action)
                 _configureActions.Add(action);
         }
 
-        void ISagaRegistration.Configure(IReceiveEndpointConfigurator configurator, IServiceProvider provider)
+        void ISagaRegistration.Configure(IReceiveEndpointConfigurator configurator, IRegistrationContext context)
         {
-            var repository = provider.GetRequiredService<ISagaRepository<TSaga>>();
+            ISagaRepository<TSaga> repository = new DependencyInjectionSagaRepository<TSaga>(context);
 
-            var decoratorRegistration = provider.GetService<ISagaRepositoryDecoratorRegistration<TSaga>>();
+            var decoratorRegistration = context.GetService<ISagaRepositoryDecoratorRegistration<TSaga>>();
             if (decoratorRegistration != null)
                 repository = decoratorRegistration.DecorateSagaRepository(repository);
 
             var sagaConfigurator = new SagaConfigurator<TSaga>(repository, configurator);
 
-            GetSagaDefinition(provider)
-                .Configure(configurator, sagaConfigurator);
+            GetSagaDefinition(context)
+                .Configure(configurator, sagaConfigurator, context);
 
-            foreach (Action<ISagaConfigurator<TSaga>> action in _configureActions)
-                action(sagaConfigurator);
+            foreach (Action<IRegistrationContext, ISagaConfigurator<TSaga>> action in _configureActions)
+                action(context, sagaConfigurator);
 
             LogContext.Info?.Log("Configured endpoint {Endpoint}, Saga: {SagaType}", configurator.InputAddress.GetEndpointName(),
                 TypeCache<TSaga>.ShortName);
@@ -60,9 +60,9 @@ namespace MassTransit.DependencyInjection.Registration
             IncludeInConfigureEndpoints = false;
         }
 
-        ISagaDefinition ISagaRegistration.GetDefinition(IServiceProvider provider)
+        ISagaDefinition ISagaRegistration.GetDefinition(IRegistrationContext context)
         {
-            return GetSagaDefinition(provider);
+            return GetSagaDefinition(context);
         }
 
         ISagaDefinition<TSaga> GetSagaDefinition(IServiceProvider provider)

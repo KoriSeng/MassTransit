@@ -1,11 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;netstandard2.1;net6.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net6.0;net7.0;net8.0</TargetFrameworks>
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(IsWindows)' == 'true' ">
-    <TargetFrameworks>$(TargetFrameworks);net462</TargetFrameworks>
+    <TargetFrameworks>$(TargetFrameworks);net472</TargetFrameworks>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -20,8 +20,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Apache.NMS.ActiveMQ.NetStd" />
+    <PackageReference Include="Apache.NMS.ActiveMQ" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="System.Net.Http" Condition="'$(TargetFramework)' == 'net472'"/>
   </ItemGroup>
 
   <ItemGroup>

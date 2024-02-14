@@ -5,6 +5,7 @@
     using System.Data.Entity;
     using System.Data.Entity.Infrastructure;
     using System.Threading.Tasks;
+    using MassTransit.Tests;
     using NUnit.Framework;
     using Saga;
     using TestFramework;
@@ -123,7 +124,7 @@
         {
             _machine = new ChoirStateMachine();
 
-            configurator.UseRetry(x =>
+            configurator.UseMessageRetry(x =>
             {
                 x.Handle<DbUpdateConcurrencyException>();
                 x.Immediate(5);

@@ -23,8 +23,12 @@ namespace MassTransit.AmazonSqsTransport
         readonly IAmazonSimpleNotificationService _snsClient;
         readonly IAmazonSQS _sqsClient;
 
-        public AmazonSqsClientContext(ConnectionContext connectionContext, IAmazonSQS sqsClient, IAmazonSimpleNotificationService snsClient,
-            CancellationToken cancellationToken)
+        public AmazonSqsClientContext(
+            ConnectionContext connectionContext,
+            IAmazonSQS sqsClient,
+            IAmazonSimpleNotificationService snsClient,
+            CancellationToken cancellationToken
+        )
             : base(connectionContext)
         {
             ConnectionContext = connectionContext;
@@ -65,29 +69,36 @@ namespace MassTransit.AmazonSqsTransport
                 Attributes = subscriptionAttributes
             };
 
-            var response = await _snsClient.SubscribeAsync(subscribeRequest, CancellationToken).ConfigureAwait(false);
+            SubscribeResponse response;
+            try
+            {
+                response = await _snsClient.SubscribeAsync(subscribeRequest, CancellationToken).ConfigureAwait(false);
 
-            response.EnsureSuccessfulResponse();
+                response.EnsureSuccessfulResponse();
+            }
+            catch (InvalidParameterException exception) when (exception.Message.Contains("exists"))
+            {
+                return;
+            }
 
             queueInfo.SubscriptionArns.Add(response.SubscriptionArn);
 
             var sqsQueueArn = queueInfo.Arn;
-            var topicArnPattern = topicInfo.Arn.Substring(0, topicInfo.Arn.LastIndexOf(':') + 1) + "*";
 
             queueInfo.Attributes.TryGetValue(QueueAttributeName.Policy, out var policyValue);
             var policy = string.IsNullOrEmpty(policyValue)
                 ? new Policy()
                 : Policy.FromJson(policyValue);
 
-            if (!QueueHasTopicPermission(policy, topicArnPattern, sqsQueueArn))
+            if (!QueueHasTopicPermission(policy, topicInfo.Arn, sqsQueueArn))
             {
                 var statement = new Statement(Statement.StatementEffect.Allow);
             #pragma warning disable 618
                 statement.Actions.Add(SQSActionIdentifiers.SendMessage);
             #pragma warning restore 618
                 statement.Resources.Add(new Resource(sqsQueueArn));
-                statement.Conditions.Add(ConditionFactory.NewSourceArnCondition(topicArnPattern));
-                statement.Principals.Add(new Principal("*"));
+                statement.Conditions.Add(ConditionFactory.NewSourceArnCondition(topicInfo.Arn));
+                statement.Principals.Add(new Principal("Service","sns.amazonaws.com"));
                 policy.Statements.Add(statement);
 
                 var jsonPolicy = policy.ToJson();
@@ -132,13 +143,6 @@ namespace MassTransit.AmazonSqsTransport
             response.EnsureSuccessfulResponse();
 
             await ConnectionContext.RemoveQueueByName(queue.EntityName).ConfigureAwait(false);
-        }
-
-        public async Task<PublishRequest> CreatePublishRequest(string topicName, string body)
-        {
-            var topicInfo = await ConnectionContext.GetTopicByName(topicName).ConfigureAwait(false);
-
-            return new PublishRequest(topicInfo.Arn, body);
         }
 
         public async Task Publish(string topicName, PublishBatchRequestEntry request, CancellationToken cancellationToken)
@@ -207,6 +211,13 @@ namespace MassTransit.AmazonSqsTransport
             response.EnsureSuccessfulResponse();
         }
 
+        public async Task<PublishRequest> CreatePublishRequest(string topicName, string body)
+        {
+            var topicInfo = await ConnectionContext.GetTopicByName(topicName).ConfigureAwait(false);
+
+            return new PublishRequest(topicInfo.Arn, body);
+        }
+
         async Task DeleteQueueSubscription(string subscriptionArn)
         {
             var unsubscribeRequest = new UnsubscribeRequest { SubscriptionArn = subscriptionArn };
@@ -216,8 +227,10 @@ namespace MassTransit.AmazonSqsTransport
             response.EnsureSuccessfulResponse();
         }
 
-        static bool QueueHasTopicPermission(Policy policy, string topicArnPattern, string sqsQueueArn)
+        static bool QueueHasTopicPermission(Policy policy, string topicArn, string sqsQueueArn)
         {
+            var topicArnPattern = topicArn.Substring(0, topicArn.LastIndexOf(':') + 1) + "*";
+
             IEnumerable<Condition> conditions = policy.Statements
                 .Where(s => s.Resources.Any(r => r.Id.Equals(sqsQueueArn)))
                 .SelectMany(s => s.Conditions);
@@ -225,7 +238,7 @@ namespace MassTransit.AmazonSqsTransport
             return conditions.Any(c =>
                 string.Equals(c.Type, ConditionFactory.ArnComparisonType.ArnLike.ToString(), StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(c.ConditionKey, ConditionFactory.SOURCE_ARN_CONDITION_KEY, StringComparison.OrdinalIgnoreCase) &&
-                c.Values.Contains(topicArnPattern));
+                c.Values.Any(v => v == topicArnPattern || v == topicArn));
         }
     }
 }

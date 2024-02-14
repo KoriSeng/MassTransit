@@ -14,33 +14,20 @@ namespace MassTransit.KafkaIntegration
         IKafkaRider
     {
         readonly IBusInstance _busInstance;
+        readonly IRiderRegistrationContext _context;
         readonly IReceiveEndpointCollection _endpoints;
         readonly IKafkaHostConfiguration _hostConfiguration;
-        readonly IRiderRegistrationContext _registrationContext;
         Lazy<ITopicProducerProvider> _producerProvider;
 
         public KafkaRider(IKafkaHostConfiguration hostConfiguration, IBusInstance busInstance, IReceiveEndpointCollection endpoints,
-            IRiderRegistrationContext registrationContext)
+            IRiderRegistrationContext context)
         {
             _hostConfiguration = hostConfiguration;
             _busInstance = busInstance;
             _endpoints = endpoints;
-            _registrationContext = registrationContext;
+            _context = context;
 
             Reset();
-        }
-
-        public ITopicProducer<TKey, TValue> GetProducer<TKey, TValue>(Uri address, ConsumeContext consumeContext)
-            where TValue : class
-        {
-            if (address == null)
-                throw new ArgumentNullException(nameof(address));
-
-            var provider = consumeContext == null
-                ? _producerProvider.Value
-                : new ConsumeContextTopicProducerProvider(_producerProvider.Value, consumeContext);
-
-            return provider.GetProducer<TKey, TValue>(address);
         }
 
         public HostReceiveEndpointHandle ConnectTopicEndpoint<TKey, TValue>(string topicName, string groupId,
@@ -49,7 +36,7 @@ namespace MassTransit.KafkaIntegration
         {
             var specification = _hostConfiguration.CreateSpecification<TKey, TValue>(topicName, groupId, configurator =>
             {
-                configure?.Invoke(_registrationContext, configurator);
+                configure?.Invoke(_context, configurator);
             });
 
             _endpoints.Add(specification.EndpointName, specification.CreateReceiveEndpoint(_busInstance));
@@ -63,7 +50,7 @@ namespace MassTransit.KafkaIntegration
         {
             var specification = _hostConfiguration.CreateSpecification<TKey, TValue>(topicName, consumerConfig, configurator =>
             {
-                configure?.Invoke(_registrationContext, configurator);
+                configure?.Invoke(_context, configurator);
             });
 
             _endpoints.Add(specification.EndpointName, specification.CreateReceiveEndpoint(_busInstance));
@@ -85,6 +72,17 @@ namespace MassTransit.KafkaIntegration
         public IEnumerable<EndpointHealthResult> CheckEndpointHealth()
         {
             return _endpoints.CheckEndpointHealth();
+        }
+
+        public ConnectHandle ConnectSendObserver(ISendObserver observer)
+        {
+            return _producerProvider.Value.ConnectSendObserver(observer);
+        }
+
+        public ITopicProducer<TKey, TValue> GetProducer<TKey, TValue>(Uri address)
+            where TValue : class
+        {
+            return _producerProvider.Value.GetProducer<TKey, TValue>(address);
         }
 
         void Reset()

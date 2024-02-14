@@ -9,6 +9,8 @@
     {
         Uri InstanceAddress { get; }
 
+        JobServiceSettings Settings { get; }
+
         /// <summary>
         /// Starts a job
         /// </summary>
@@ -42,8 +44,9 @@
         /// <param name="configurator"></param>
         /// <param name="options"></param>
         /// <param name="jobTypeId"></param>
+        /// <param name="jobTypeName"></param>
         /// <typeparam name="T"></typeparam>
-        void RegisterJobType<T>(IReceiveEndpointConfigurator configurator, JobOptions<T> options, Guid jobTypeId)
+        void RegisterJobType<T>(IReceiveEndpointConfigurator configurator, JobOptions<T> options, Guid jobTypeId, string jobTypeName)
             where T : class;
 
         Task BusStarted(IPublishEndpoint publishEndpoint);
@@ -55,5 +58,7 @@
         /// <returns></returns>
         Guid GetJobTypeId<T>()
             where T : class;
+
+        void ConfigureSuperviseJobConsumer(IReceiveEndpointConfigurator configurator);
     }
 }

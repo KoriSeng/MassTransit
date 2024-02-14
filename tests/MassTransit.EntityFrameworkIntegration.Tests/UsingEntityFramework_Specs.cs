@@ -7,6 +7,7 @@
     using System.Data.Entity.ModelConfiguration;
     using System.Linq;
     using System.Threading.Tasks;
+    using MassTransit.Tests;
     using NUnit.Framework;
     using Saga;
     using TestFramework;
@@ -89,7 +90,7 @@
         {
             _machine = new SuperShopper();
 
-            configurator.UseRetry(x =>
+            configurator.UseMessageRetry(x =>
             {
                 x.Handle<DbUpdateException>();
                 x.Immediate(5);

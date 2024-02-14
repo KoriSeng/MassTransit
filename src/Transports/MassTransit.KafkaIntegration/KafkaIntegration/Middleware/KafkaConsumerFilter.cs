@@ -22,10 +22,15 @@ namespace MassTransit.KafkaIntegration.Middleware
         {
             var receiveSettings = _context.GetPayload<ReceiveSettings>();
             var consumers = new IKafkaMessageConsumer<TKey, TValue>[receiveSettings.ConcurrentConsumerLimit];
+
             for (var i = 0; i < consumers.Length; i++)
                 consumers[i] = new KafkaMessageConsumer<TKey, TValue>(receiveSettings, _context, context);
 
             var supervisor = CreateConsumerSupervisor(consumers);
+
+            await supervisor.Ready.ConfigureAwait(false);
+
+            _context.AddConsumeAgent(supervisor);
 
             await _context.TransportObservers.NotifyReady(_context.InputAddress).ConfigureAwait(false);
 
@@ -52,8 +57,6 @@ namespace MassTransit.KafkaIntegration.Middleware
         Supervisor CreateConsumerSupervisor(IKafkaMessageConsumer<TKey, TValue>[] actualConsumers)
         {
             var supervisor = new ConsumerSupervisor(actualConsumers);
-
-            _context.AddConsumeAgent(supervisor);
 
             supervisor.SetReady();
 

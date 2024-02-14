@@ -37,7 +37,7 @@
 
         Type CreateImplementation(Type interfaceType)
         {
-            if (!interfaceType.GetTypeInfo().IsInterface)
+            if (!interfaceType.IsInterface)
                 throw new ArgumentException("Proxies can only be created for interfaces: " + interfaceType.Name, nameof(interfaceType));
 
             return GetModuleBuilderForType(interfaceType, moduleBuilder => CreateTypeFromInterface(moduleBuilder, interfaceType));
@@ -52,8 +52,10 @@
             try
             {
                 var typeBuilder = builder.DefineType(typeName,
-                    TypeAttributes.Serializable | TypeAttributes.Class |
-                    TypeAttributes.Public | TypeAttributes.Sealed,
+#pragma warning disable SYSLIB0050 // Formatter-based serialization is obsolete and should not be used.
+                    TypeAttributes.Serializable |
+#pragma warning restore SYSLIB0050
+                    TypeAttributes.Class | TypeAttributes.Public | TypeAttributes.Sealed,
                     typeof(object), new[] { interfaceType });
 
                 typeBuilder.DefineDefaultConstructor(MethodAttributes.Public);

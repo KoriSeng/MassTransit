@@ -3,15 +3,17 @@
     using System;
     using System.Threading.Tasks;
     using Apache.NMS;
+    using Middleware;
     using Topology;
 
 
-    public class ActiveMqMoveTransport
+    public class ActiveMqMoveTransport<TSettings>
+        where TSettings : class
     {
         readonly Queue _destination;
-        readonly IFilter<SessionContext> _topologyFilter;
+        readonly ConfigureActiveMqTopologyFilter<TSettings> _topologyFilter;
 
-        protected ActiveMqMoveTransport(Queue destination, IFilter<SessionContext> topologyFilter)
+        protected ActiveMqMoveTransport(Queue destination, ConfigureActiveMqTopologyFilter<TSettings> topologyFilter)
         {
             _topologyFilter = topologyFilter;
             _destination = destination;
@@ -25,23 +27,29 @@
             if (!context.TryGetPayload(out ActiveMqMessageContext messageContext))
                 throw new ArgumentException("The ActiveMqMessageContext was not present", nameof(context));
 
-            await _topologyFilter.Send(sessionContext, Pipe.Empty<SessionContext>()).ConfigureAwait(false);
+            OneTimeContext<ConfigureTopologyContext<TSettings>> oneTimeContext = await _topologyFilter.Configure(sessionContext).ConfigureAwait(false);
 
             var queue = await sessionContext.GetQueue(_destination).ConfigureAwait(false);
 
-            var producer = await sessionContext.CreateMessageProducer(queue).ConfigureAwait(false);
-
             var message = messageContext.TransportMessage switch
             {
-                IBytesMessage _ => producer.CreateBytesMessage(context.Body.GetBytes()),
-                ITextMessage _ => producer.CreateTextMessage(context.Body.GetString()),
-                _ => producer.CreateMessage(),
+                // ReSharper disable MethodHasAsyncOverload
+                IBytesMessage _ => sessionContext.CreateBytesMessage(context.Body.GetBytes()),
+                ITextMessage _ => sessionContext.CreateTextMessage(context.Body.GetString()),
+                _ => sessionContext.CreateMessage(),
             };
 
             CloneMessage(message, messageContext.TransportMessage, preSend);
 
-            var task = Task.Run(() => producer.Send(message));
-            context.AddReceiveTask(task);
+            try
+            {
+                await sessionContext.SendAsync(queue, message, context.CancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                oneTimeContext.Evict();
+                throw;
+            }
         }
 
         static void CloneMessage(IMessage message, IMessage source, Action<IMessage, SendHeaders> preSend)

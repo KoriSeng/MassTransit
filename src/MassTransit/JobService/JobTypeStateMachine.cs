@@ -3,13 +3,14 @@ namespace MassTransit
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using Configuration;
     using Contracts.JobService;
 
 
     public sealed class JobTypeStateMachine :
         MassTransitStateMachine<JobTypeSaga>
     {
-        public JobTypeStateMachine(JobServiceOptions options)
+        public JobTypeStateMachine()
         {
             Event(() => JobSlotRequested, x =>
             {
@@ -27,7 +28,7 @@ namespace MassTransit
 
             During(Initial, Active, Idle,
                 When(JobSlotRequested)
-                    .IfElse(context => context.IsSlotAvailable(options.HeartbeatTimeout),
+                    .IfElse(context => context.IsSlotAvailable(context.GetPayload<JobSagaSettings>().HeartbeatTimeout),
                         allocate => allocate
                             .TransitionTo(Active),
                         unavailable => unavailable
@@ -58,6 +59,8 @@ namespace MassTransit
                     .If(context => context.Saga.ActiveJobCount == 0,
                         empty => empty.TransitionTo(Idle)));
 
+            During(Idle,
+                Ignore(JobSlotReleased));
 
             During(Initial,
                 When(SetConcurrentJobLimit)
@@ -180,8 +183,10 @@ namespace MassTransit
                 if (context.Message.Kind == ConcurrentLimitKind.Configured)
                 {
                     context.Saga.ConcurrentJobLimit = context.Message.ConcurrentJobLimit;
+                    context.Saga.Name = context.Message.JobTypeName;
 
-                    LogContext.Debug?.Log("Concurrent Job Limit: {ConcurrencyLimit}", context.Saga.ConcurrentJobLimit);
+                    LogContext.Debug?.Log("Concurrent Job Limit: {ConcurrencyLimit} {JobTypeName}", context.Saga.ConcurrentJobLimit,
+                        context.Message.JobTypeName);
                 }
                 else if (context.Message.Kind == ConcurrentLimitKind.Override)
                 {

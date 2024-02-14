@@ -2,12 +2,13 @@ namespace MassTransit.AmazonSqsTransport.Middleware
 {
     using System;
     using System.Collections.Generic;
-    using System.Linq;
+    using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
     using Amazon.SQS;
     using Amazon.SQS.Model;
     using Internals;
+    using MassTransit.Middleware;
     using Transports;
     using Util;
 
@@ -20,6 +21,7 @@ namespace MassTransit.AmazonSqsTransport.Middleware
     {
         readonly ClientContext _client;
         readonly SqsReceiveEndpointContext _context;
+        readonly IChannelExecutorPool<Message> _executorPool;
         readonly ReceiveSettings _receiveSettings;
 
         /// <summary>
@@ -35,7 +37,16 @@ namespace MassTransit.AmazonSqsTransport.Middleware
 
             _receiveSettings = client.GetPayload<ReceiveSettings>();
 
+            _executorPool = new FifoChannelExecutorPool(_receiveSettings);
+
             TrySetConsumeTask(Task.Run(() => Consume()));
+        }
+
+        protected override async Task ActiveAndActualAgentsCompleted(StopContext context)
+        {
+            await base.ActiveAndActualAgentsCompleted(context).ConfigureAwait(false);
+
+            await _executorPool.DisposeAsync().ConfigureAwait(false);
         }
 
         async Task Consume()
@@ -51,18 +62,19 @@ namespace MassTransit.AmazonSqsTransport.Middleware
 
             SetReady();
 
+            Task Handle(Message message, CancellationToken cancellationToken)
+            {
+                var lockContext = new AmazonSqsReceiveLockContext(_context.InputAddress, message, _receiveSettings, _client);
+
+                return _receiveSettings.IsOrdered
+                    ? _executorPool.Run(message, () => HandleMessage(message, lockContext), cancellationToken)
+                    : HandleMessage(message, lockContext);
+            }
+
             try
             {
                 while (!IsStopping)
-                {
-                    if (_receiveSettings.IsOrdered)
-                    {
-                        await algorithm.Run(ReceiveMessages, (m, _) => HandleMessage(m), GroupMessages, OrderMessages, Stopping)
-                            .ConfigureAwait(false);
-                    }
-                    else
-                        await algorithm.Run(ReceiveMessages, (m, _) => HandleMessage(m), Stopping).ConfigureAwait(false);
-                }
+                    await algorithm.Run(ReceiveMessages, (m, c) => Handle(m, c), Stopping).ConfigureAwait(false);
             }
             catch (OperationCanceledException exception) when (exception.CancellationToken == Stopping)
             {
@@ -89,7 +101,7 @@ namespace MassTransit.AmazonSqsTransport.Middleware
             }
         }
 
-        async Task HandleMessage(Message message)
+        async Task HandleMessage(Message message, ReceiveLockContext lockContext)
         {
             if (IsStopping)
                 return;
@@ -99,8 +111,7 @@ namespace MassTransit.AmazonSqsTransport.Middleware
             var context = new AmazonSqsReceiveContext(message, redelivered, _context, _client, _receiveSettings, _client.ConnectionContext);
             try
             {
-                await Dispatch(message.MessageId, context, ctx => new AmazonSqsReceiveLockContext(ctx, message, _receiveSettings, _client))
-                    .ConfigureAwait(false);
+                await Dispatch(message.MessageId, context, lockContext).ConfigureAwait(false);
             }
             catch (Exception exception)
             {
@@ -112,23 +123,11 @@ namespace MassTransit.AmazonSqsTransport.Middleware
             }
         }
 
-        static IEnumerable<IGrouping<string, Message>> GroupMessages(IEnumerable<Message> messages)
-        {
-            return messages.GroupBy(x => x.Attributes.TryGetValue(MessageSystemAttributeName.MessageGroupId, out var groupId) ? groupId : "");
-        }
-
-        static IEnumerable<Message> OrderMessages(IEnumerable<Message> messages)
-        {
-            return messages.OrderBy(x => x.Attributes.TryGetValue("SequenceNumber", out var sequenceNumber) ? sequenceNumber : "",
-                SequenceNumberComparer.Instance);
-        }
-
         async Task<IEnumerable<Message>> ReceiveMessages(int messageLimit, CancellationToken cancellationToken)
         {
             try
             {
-                return await _client
-                    .ReceiveMessages(_receiveSettings.EntityName, messageLimit, _receiveSettings.WaitTimeSeconds, cancellationToken)
+                return await _client.ReceiveMessages(_receiveSettings.EntityName, messageLimit, _receiveSettings.WaitTimeSeconds, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -138,23 +137,38 @@ namespace MassTransit.AmazonSqsTransport.Middleware
         }
 
 
-        class SequenceNumberComparer :
-            IComparer<string>
+        class FifoChannelExecutorPool :
+            IChannelExecutorPool<Message>
         {
-            public static readonly SequenceNumberComparer Instance = new SequenceNumberComparer();
+            readonly IChannelExecutorPool<Message> _keyExecutorPool;
 
-            public int Compare(string x, string y)
+            public FifoChannelExecutorPool(ReceiveSettings receiveSettings)
             {
-                if (string.IsNullOrWhiteSpace(x))
-                    throw new ArgumentNullException(nameof(x));
+                IHashGenerator hashGenerator = new Murmur3UnsafeHashGenerator();
+                _keyExecutorPool = new PartitionChannelExecutorPool<Message>(MessageGroupIdProvider, hashGenerator,
+                    receiveSettings.ConcurrentMessageLimit, receiveSettings.ConcurrentDeliveryLimit);
+            }
 
-                if (string.IsNullOrWhiteSpace(y))
-                    throw new ArgumentNullException(nameof(y));
+            public Task Push(Message result, Func<Task> handle, CancellationToken cancellationToken)
+            {
+                return _keyExecutorPool.Push(result, handle, cancellationToken);
+            }
 
-                if (x.Length != y.Length)
-                    return x.Length > y.Length ? 1 : -1;
+            public Task Run(Message result, Func<Task> method, CancellationToken cancellationToken = default)
+            {
+                return _keyExecutorPool.Run(result, method, cancellationToken);
+            }
 
-                return string.Compare(x, y, StringComparison.Ordinal);
+            public ValueTask DisposeAsync()
+            {
+                return _keyExecutorPool.DisposeAsync();
+            }
+
+            static byte[] MessageGroupIdProvider(Message message)
+            {
+                return message.Attributes.TryGetValue(MessageSystemAttributeName.MessageGroupId, out var groupId) && !string.IsNullOrEmpty(groupId)
+                    ? Encoding.UTF8.GetBytes(groupId)
+                    : Array.Empty<byte>();
             }
         }
     }

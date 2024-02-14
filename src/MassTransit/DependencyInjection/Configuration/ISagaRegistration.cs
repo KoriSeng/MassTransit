@@ -6,11 +6,11 @@ namespace MassTransit.Configuration
     public interface ISagaRegistration :
         IRegistration
     {
-        void AddConfigureAction<T>(Action<ISagaConfigurator<T>> configure)
+        void AddConfigureAction<T>(Action<IRegistrationContext, ISagaConfigurator<T>> configure)
             where T : class, ISaga;
 
-        void Configure(IReceiveEndpointConfigurator configurator, IServiceProvider provider);
+        void Configure(IReceiveEndpointConfigurator configurator, IRegistrationContext context);
 
-        ISagaDefinition GetDefinition(IServiceProvider provider);
+        ISagaDefinition GetDefinition(IRegistrationContext context);
     }
 }

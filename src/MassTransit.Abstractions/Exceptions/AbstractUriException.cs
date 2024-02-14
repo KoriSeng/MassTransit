@@ -18,17 +18,20 @@ namespace MassTransit
         }
 
         protected AbstractUriException(Uri uri, string message)
-            : base(uri + " => " + message)
+            : base($"{uri} => {message}")
         {
             Uri = uri;
         }
 
         protected AbstractUriException(Uri uri, string message, Exception innerException)
-            : base(uri + " => " + message, innerException)
+            : base($"{uri} => {message}", innerException)
         {
             Uri = uri;
         }
 
+#if NET8_0_OR_GREATER
+        [Obsolete("Formatter-based serialization is obsolete and should not be used.")]
+#endif
         protected AbstractUriException(SerializationInfo info, StreamingContext context)
             : base(info, context)
         {

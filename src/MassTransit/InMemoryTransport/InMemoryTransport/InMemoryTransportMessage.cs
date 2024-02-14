@@ -3,22 +3,26 @@ namespace MassTransit.InMemoryTransport
 {
     using System;
     using System.Collections.Generic;
+    using System.Threading;
 
 
     public class InMemoryTransportMessage
     {
-        public InMemoryTransportMessage(Guid messageId, byte[] body, string contentType, string messageType)
+        static long _nextSequenceNumber;
+
+        public InMemoryTransportMessage(Guid messageId, byte[] body, string contentType)
         {
             Headers = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             MessageId = messageId;
             Body = body;
-            MessageType = messageType;
 
             Headers[MessageHeaders.MessageId] = messageId.ToString();
             Headers[MessageHeaders.ContentType] = contentType;
+
+            SequenceNumber = Interlocked.Increment(ref _nextSequenceNumber);
         }
 
-        public string MessageType { get; }
+        public long SequenceNumber { get; }
 
         public Guid MessageId { get; }
 

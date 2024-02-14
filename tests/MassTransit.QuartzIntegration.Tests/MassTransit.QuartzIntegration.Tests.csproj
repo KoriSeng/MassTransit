@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,6 +12,7 @@
     <ProjectReference Include="..\..\src\Scheduling\MassTransit.QuartzIntegration\MassTransit.QuartzIntegration.csproj" />
     <ProjectReference Include="..\..\src\MassTransit.TestFramework\MassTransit.TestFramework.csproj" />
     <ProjectReference Include="..\..\src\MassTransit\MassTransit.csproj" />
+    <ProjectReference Include="..\MassTransit.Tests\MassTransit.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>

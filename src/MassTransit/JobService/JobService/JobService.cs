@@ -16,19 +16,19 @@
     {
         readonly ConcurrentDictionary<Guid, JobHandle> _jobs;
         readonly Dictionary<Type, IJobTypeRegistration> _jobTypes;
-        readonly JobServiceOptions _options;
         Timer _heartbeat;
 
-        public JobService(IServiceInstanceConfigurator configurator, JobServiceOptions options)
+        public JobService(JobServiceSettings settings)
         {
-            _options = options;
-            InstanceAddress = configurator.InstanceAddress;
+            Settings = settings;
 
             _jobTypes = new Dictionary<Type, IJobTypeRegistration>();
             _jobs = new ConcurrentDictionary<Guid, JobHandle>();
-
-            ConfigureSuperviseJobConsumer(configurator.InstanceEndpointConfigurator);
         }
+
+        public JobServiceSettings Settings { get; }
+
+        public Uri InstanceAddress => Settings.InstanceAddress;
 
         public bool TryGetJob(Guid jobId, out JobHandle jobReference)
         {
@@ -47,8 +47,6 @@
 
             return false;
         }
-
-        public Uri InstanceAddress { get; }
 
         public async Task<JobHandle> StartJob<T>(ConsumeContext<StartJob> context, T job, IPipe<ConsumeContext<T>> jobPipe, TimeSpan timeout)
             where T : class
@@ -104,13 +102,13 @@
             await Task.WhenAll(_jobTypes.Values.Select(x => x.PublishJobInstanceStopped(publishEndpoint, InstanceAddress))).ConfigureAwait(false);
         }
 
-        public void RegisterJobType<T>(IReceiveEndpointConfigurator configurator, JobOptions<T> options, Guid jobTypeId)
+        public void RegisterJobType<T>(IReceiveEndpointConfigurator configurator, JobOptions<T> options, Guid jobTypeId, string jobTypeName)
             where T : class
         {
             if (_jobTypes.ContainsKey(typeof(T)))
                 throw new ConfigurationException($"A job type can only be registered once per service instance: {TypeCache<T>.ShortName}");
 
-            _jobTypes.Add(typeof(T), new JobTypeRegistration<T>(configurator, options, jobTypeId));
+            _jobTypes.Add(typeof(T), new JobTypeRegistration<T>(configurator, options, jobTypeId, jobTypeName));
         }
 
         public async Task BusStarted(IPublishEndpoint publishEndpoint)
@@ -132,7 +130,7 @@
                 });
             }
 
-            _heartbeat = new Timer(PublishHeartbeats, null, _options.HeartbeatInterval, _options.HeartbeatInterval);
+            _heartbeat = new Timer(PublishHeartbeats, null, Settings.HeartbeatInterval, Settings.HeartbeatInterval);
         }
 
         public Guid GetJobTypeId<T>()
@@ -144,6 +142,15 @@
             throw new ConfigurationException($"The job type was not registered: {TypeCache<T>.ShortName}");
         }
 
+        public void ConfigureSuperviseJobConsumer(IReceiveEndpointConfigurator configurator)
+        {
+            var consumerFactory = new DelegateConsumerFactory<SuperviseJobConsumer>(() => new SuperviseJobConsumer(this));
+
+            var consumerConfigurator = new ConsumerConfigurator<SuperviseJobConsumer>(consumerFactory, configurator);
+
+            configurator.AddEndpointSpecification(consumerConfigurator);
+        }
+
         void Add(JobHandle jobHandle)
         {
             if (!_jobs.TryAdd(jobHandle.JobId, jobHandle))
@@ -153,15 +160,6 @@
             {
                 TryRemoveJob(jobHandle.JobId, out _);
             });
-        }
-
-        void ConfigureSuperviseJobConsumer(IReceiveEndpointConfigurator configurator)
-        {
-            var consumerFactory = new DelegateConsumerFactory<SuperviseJobConsumer>(() => new SuperviseJobConsumer(this));
-
-            var consumerConfigurator = new ConsumerConfigurator<SuperviseJobConsumer>(consumerFactory, configurator);
-
-            configurator.AddEndpointSpecification(consumerConfigurator);
         }
 
 
@@ -181,11 +179,12 @@
             readonly IReceiveEndpointConfigurator _configurator;
             readonly JobOptions<T> _options;
 
-            public JobTypeRegistration(IReceiveEndpointConfigurator configurator, JobOptions<T> options, Guid jobTypeId)
+            public JobTypeRegistration(IReceiveEndpointConfigurator configurator, JobOptions<T> options, Guid jobTypeId, string jobTypeName)
             {
                 _configurator = configurator;
                 _options = options;
                 JobTypeId = jobTypeId;
+                JobTypeName = string.IsNullOrWhiteSpace(options.JobTypeName) ? jobTypeName : options.JobTypeName;
             }
 
             public Task PublishConcurrentJobLimit(IPublishEndpoint publishEndpoint, Uri instanceAddress)
@@ -195,6 +194,7 @@
                 return publishEndpoint.Publish<SetConcurrentJobLimit>(new
                 {
                     JobTypeId,
+                    JobTypeName,
                     instanceAddress,
                     ServiceAddress = _configurator.InputAddress,
                     _options.ConcurrentJobLimit,
@@ -207,6 +207,7 @@
                 return publishEndpoint.Publish<SetConcurrentJobLimit>(new
                 {
                     JobTypeId,
+                    JobTypeName,
                     instanceAddress,
                     ServiceAddress = _configurator.InputAddress,
                     _options.ConcurrentJobLimit,
@@ -219,6 +220,7 @@
                 return publishEndpoint.Publish<SetConcurrentJobLimit>(new
                 {
                     JobTypeId,
+                    JobTypeName,
                     instanceAddress,
                     ServiceAddress = _configurator.InputAddress,
                     _options.ConcurrentJobLimit,
@@ -227,6 +229,7 @@
             }
 
             public Guid JobTypeId { get; }
+            string JobTypeName { get; }
         }
     }
 }

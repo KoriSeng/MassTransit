@@ -25,7 +25,6 @@ namespace MassTransitBenchmark
             InMemory,
             AmazonSqs,
             ActiveMq,
-            Grpc,
             Kafka
         }
 
@@ -35,7 +34,10 @@ namespace MassTransitBenchmark
             Add<string>("v|verbose", "Verbose output", x => Verbose = x != null);
             Add<string>("?|help", "Display this help and exit", x => Help = x != null);
             Add<int>("threads:", "The minimum number of thread pool threads", value => Threads = value);
-            Add<TransportOptions>("t|transport:", "Transport (RabbitMQ, AzureServiceBus, Mediator, AmazonSqs, InMemory, Grpc)",
+            Add<string>("traces", "Enable traces capturing to OTel exporter", x => EnableTraces = x != null);
+            Add<string>("metrics", "Enable metrics capturing to OTel exporter", x => EnableMetrics = x != null);
+
+            Add<TransportOptions>("t|transport:", "Transport (RabbitMQ, AzureServiceBus, Mediator, AmazonSqs, InMemory)",
                 value => Transport = value);
             Add("rabbitmq", "Use RabbitMQ", x => Transport = TransportOptions.RabbitMq);
             Add("kafka", "Use Kafka", x => Transport = TransportOptions.Kafka);
@@ -44,7 +46,6 @@ namespace MassTransitBenchmark
             Add("sqs", "Use Amazon SQS", x => Transport = TransportOptions.AmazonSqs);
             Add("servicebus", "Use Azure Service Bus", x => Transport = TransportOptions.AzureServiceBus);
             Add("activemq", "Use ActiveMQ", x => Transport = TransportOptions.ActiveMq);
-            Add("grpc", "Use gRPC", x => Transport = TransportOptions.Grpc);
 
             Add<BenchmarkOptions>("run:", "Run benchmark (All, Latency, RPC)", value => Benchmark = value);
             Add("rpc", "Run the RPC benchmark", x => Benchmark = BenchmarkOptions.Rpc);
@@ -59,6 +60,8 @@ namespace MassTransitBenchmark
         public int? Threads { get; set; }
         public bool Verbose { get; set; }
         public bool Help { get; set; }
+        public bool EnableTraces { get; set; }
+        public bool EnableMetrics { get; set; }
 
         public TransportOptions Transport { get; private set; }
 

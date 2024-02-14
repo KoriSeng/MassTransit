@@ -9,21 +9,21 @@ namespace MassTransit.Configuration
     public interface IActivityRegistration :
         IRegistration
     {
-        void AddConfigureAction<T, TArguments>(Action<IExecuteActivityConfigurator<T, TArguments>> configure)
+        void AddConfigureAction<T, TArguments>(Action<IRegistrationContext, IExecuteActivityConfigurator<T, TArguments>> configure)
             where T : class, IExecuteActivity<TArguments>
             where TArguments : class;
 
-        void AddConfigureAction<T, TLog>(Action<ICompensateActivityConfigurator<T, TLog>> configure)
+        void AddConfigureAction<T, TLog>(Action<IRegistrationContext, ICompensateActivityConfigurator<T, TLog>> configure)
             where T : class, ICompensateActivity<TLog>
             where TLog : class;
 
         void Configure(IReceiveEndpointConfigurator executeEndpointConfigurator, IReceiveEndpointConfigurator compensateEndpointConfigurator,
-            IServiceProvider scopeProvider);
+            IRegistrationContext context);
 
-        IActivityDefinition GetDefinition(IServiceProvider provider);
+        IActivityDefinition GetDefinition(IRegistrationContext context);
 
-        void ConfigureCompensate(IReceiveEndpointConfigurator configurator, IServiceProvider configurationServiceProvider);
+        void ConfigureCompensate(IReceiveEndpointConfigurator configurator, IRegistrationContext context);
 
-        void ConfigureExecute(IReceiveEndpointConfigurator configurator, IServiceProvider configurationServiceProvider, Uri compensateAddress);
+        void ConfigureExecute(IReceiveEndpointConfigurator configurator, IRegistrationContext context, Uri compensateAddress);
     }
 }

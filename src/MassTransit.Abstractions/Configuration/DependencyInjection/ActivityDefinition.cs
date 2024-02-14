@@ -28,12 +28,15 @@ namespace MassTransit
         IEndpointDefinition? IActivityDefinition.CompensateEndpointDefinition => CompensateEndpointDefinition;
 
         void IActivityDefinition<TActivity, TArguments, TLog>.Configure(IReceiveEndpointConfigurator endpointConfigurator,
-            ICompensateActivityConfigurator<TActivity, TLog> compensateActivityConfigurator)
+            ICompensateActivityConfigurator<TActivity, TLog> compensateActivityConfigurator, IRegistrationContext context)
         {
             if (ConcurrentMessageLimit.HasValue)
                 compensateActivityConfigurator.ConcurrentMessageLimit = ConcurrentMessageLimit;
 
+        #pragma warning disable CS0618
             ConfigureCompensateActivity(endpointConfigurator, compensateActivityConfigurator);
+        #pragma warning restore CS0618
+            ConfigureCompensateActivity(endpointConfigurator, compensateActivityConfigurator, context);
         }
 
         string IActivityDefinition.GetCompensateEndpointName(IEndpointNameFormatter formatter)
@@ -63,8 +66,20 @@ namespace MassTransit
         /// </summary>
         /// <param name="endpointConfigurator">The receive endpoint configurator for the consumer</param>
         /// <param name="compensateActivityConfigurator"></param>
+        [Obsolete("Use the IRegistrationContext overload instead. Visit https://masstransit.io/obsolete for details.")]
         protected virtual void ConfigureCompensateActivity(IReceiveEndpointConfigurator endpointConfigurator,
             ICompensateActivityConfigurator<TActivity, TLog> compensateActivityConfigurator)
+        {
+        }
+
+        /// <summary>
+        /// Called when the compensate activity is being configured on the endpoint.
+        /// </summary>
+        /// <param name="endpointConfigurator">The receive endpoint configurator for the consumer</param>
+        /// <param name="compensateActivityConfigurator"></param>
+        /// <param name="context"></param>
+        protected virtual void ConfigureCompensateActivity(IReceiveEndpointConfigurator endpointConfigurator,
+            ICompensateActivityConfigurator<TActivity, TLog> compensateActivityConfigurator, IRegistrationContext context)
         {
         }
     }

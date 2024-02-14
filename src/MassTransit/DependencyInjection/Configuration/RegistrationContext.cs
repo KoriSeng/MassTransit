@@ -2,17 +2,21 @@ namespace MassTransit.Configuration
 {
     using System;
     using System.Linq;
+    using Microsoft.Extensions.DependencyInjection;
 
 
     public class RegistrationContext :
-        IRegistrationContext
+        IRegistrationContext,
+        ISetScopedConsumeContext
     {
         readonly IServiceProvider _provider;
+        readonly ISetScopedConsumeContext _setScopedConsumeContext;
 
-        public RegistrationContext(IServiceProvider provider, IContainerSelector selector)
+        public RegistrationContext(IServiceProvider provider, IContainerSelector selector, ISetScopedConsumeContext setScopedConsumeContext)
         {
             Selector = selector;
             _provider = provider;
+            _setScopedConsumeContext = setScopedConsumeContext;
         }
 
         protected IContainerSelector Selector { get; }
@@ -31,7 +35,8 @@ namespace MassTransit.Configuration
             if (!Selector.TryGetValue<IConsumerRegistration>(_provider, typeof(T), out var consumer))
                 throw new ArgumentException($"The consumer type was not found: {TypeCache.GetShortName(typeof(T))}", nameof(T));
 
-            consumer.AddConfigureAction(configure);
+            if (configure != null)
+                consumer.AddConfigureAction<T>((_, cfg) => configure.Invoke(cfg));
             consumer.Configure(configurator, this);
         }
 
@@ -57,7 +62,8 @@ namespace MassTransit.Configuration
             if (!Selector.TryGetValue<ISagaRegistration>(_provider, typeof(T), out var saga))
                 throw new ArgumentException($"The saga type was not found: {TypeCache.GetShortName(typeof(T))}", nameof(T));
 
-            saga.AddConfigureAction(configure);
+            if (configure != null)
+                saga.AddConfigureAction<T>((_, cfg) => configure.Invoke(cfg));
             saga.Configure(configurator, this);
         }
 
@@ -121,7 +127,15 @@ namespace MassTransit.Configuration
 
         public object GetService(Type serviceType)
         {
+            if (serviceType == typeof(IContainerSelector))
+                return Selector;
+
             return _provider.GetService(serviceType);
+        }
+
+        public IDisposable PushContext(IServiceScope scope, ConsumeContext context)
+        {
+            return _setScopedConsumeContext.PushContext(scope, context);
         }
     }
 }

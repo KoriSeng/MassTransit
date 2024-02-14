@@ -101,8 +101,6 @@ namespace MassTransit.Transports
             {
                 LogContext.SetCurrentIfNull(_context.LogContext);
 
-                TransportLogMessages.StoppingReceiveTransport(_context.InputAddress);
-
                 if (_supervisor != null)
                     await _supervisor.Stop(context).ConfigureAwait(false);
 
@@ -147,7 +145,7 @@ namespace MassTransit.Transports
 
                             if (retryContext == null && !policyContext.CanRetry(exception, out retryContext))
                             {
-                                LogContext.Debug?.Log(exception, "ReceiveTransport Cannot Retry: {InputAddress}", _context.InputAddress);
+                                LogContext.Error?.Log(exception, "ReceiveTransport Cannot Retry: {InputAddress}", _context.InputAddress);
                                 break;
                             }
                         }
@@ -189,7 +187,9 @@ namespace MassTransit.Transports
                     if (_preStartPipe.IsNotEmpty())
                         await _supervisor.Send(_preStartPipe, Stopping).ConfigureAwait(false);
 
-                    await _context.OnTransportStartup(_supervisor, Stopping).ConfigureAwait(false);
+                    // Nothing connected to the pipe, so signal early we are available
+                    if (!_context.ReceivePipe.Connected.IsCompleted)
+                        await _context.OnTransportStartup(_supervisor, Stopping).ConfigureAwait(false);
 
                     if (!IsStopping)
                         await _supervisor.Send(_transportPipe, Stopped).ConfigureAwait(false);

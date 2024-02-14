@@ -46,20 +46,17 @@
 
         static bool IsMassTransitClass(Type type)
         {
-            return type.FullName.StartsWith("MassTransit") || IsSagaClass(type) && type != typeof(AuditDocument);
+            return type.FullName.StartsWith("MassTransit") || (IsSagaClass(type) && type != typeof(AuditDocument));
         }
 
         static bool IsSagaClass(Type type)
         {
-            return type.GetTypeInfo().IsClass && typeof(ISagaVersion).IsAssignableFrom(type);
+            return type.IsClass && typeof(ISagaVersion).IsAssignableFrom(type);
         }
 
         public static void RegisterClass<T>(Expression<Func<T, Guid>> id)
         {
-            if (BsonClassMap.IsClassMapRegistered(typeof(T)))
-                return;
-
-            BsonClassMap.RegisterClassMap<T>(x =>
+            BsonClassMap.TryRegisterClassMap<T>(x =>
             {
                 x.AutoMap();
                 x.SetIdMember(x.GetMemberMap(id));
@@ -68,10 +65,7 @@
 
         public static void RegisterClass<T>()
         {
-            if (BsonClassMap.IsClassMapRegistered(typeof(T)))
-                return;
-
-            BsonClassMap.RegisterClassMap<T>(x =>
+            BsonClassMap.TryRegisterClassMap<T>(x =>
             {
                 x.AutoMap();
                 x.SetDiscriminatorIsRequired(true);

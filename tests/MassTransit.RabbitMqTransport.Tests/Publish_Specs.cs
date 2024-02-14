@@ -46,6 +46,7 @@
             }
         }
 
+
         [TestFixture]
         public class WhenAMessageIsSendToTheEndpointWithAGuidHeader :
             RabbitMqTestFixture
@@ -436,6 +437,89 @@
         }
 
 
+        [TestFixture]
+        public class When_batch_publish_is_enabled_and_a_message_is_published_to_the_consumer :
+            RabbitMqTestFixture
+        {
+            [Test]
+            public async Task Should_be_received()
+            {
+                var endpoint = await Bus.GetSendEndpoint(InputQueueAddress);
+
+                var message = new A { Id = Guid.NewGuid() };
+                await endpoint.Send(message, context =>
+                {
+                    Guid? value = NewId.NextGuid();
+                    context.Headers.Set(MessageHeaders.SchedulingTokenId, value);
+                });
+
+                ConsumeContext<A> received = await _receivedA;
+
+                Assert.AreEqual(message.Id, received.Message.Id);
+            }
+
+            Task<ConsumeContext<A>> _receivedA;
+
+            protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
+            {
+                base.ConfigureRabbitMqReceiveEndpoint(configurator);
+                _receivedA = Handled<A>(configurator);
+            }
+
+            protected override void ConfigureRabbitMqHost(IRabbitMqHostConfigurator configurator)
+            {
+                base.ConfigureRabbitMqHost(configurator);
+
+                configurator.ConfigureBatchPublish(c =>
+                {
+                    c.Enabled = true;
+                });
+            }
+        }
+
+
+        [TestFixture]
+        public class When_batch_publish_is_enabled_with_zero_timeout_and_a_message_is_published_to_the_consumer :
+            RabbitMqTestFixture
+        {
+            [Test]
+            public async Task Should_be_received()
+            {
+                var endpoint = await Bus.GetSendEndpoint(InputQueueAddress);
+
+                var message = new A { Id = Guid.NewGuid() };
+                await endpoint.Send(message, context =>
+                {
+                    Guid? value = NewId.NextGuid();
+                    context.Headers.Set(MessageHeaders.SchedulingTokenId, value);
+                });
+
+                ConsumeContext<A> received = await _receivedA;
+
+                Assert.AreEqual(message.Id, received.Message.Id);
+            }
+
+            Task<ConsumeContext<A>> _receivedA;
+
+            protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
+            {
+                base.ConfigureRabbitMqReceiveEndpoint(configurator);
+                _receivedA = Handled<A>(configurator);
+            }
+
+            protected override void ConfigureRabbitMqHost(IRabbitMqHostConfigurator configurator)
+            {
+                base.ConfigureRabbitMqHost(configurator);
+
+                configurator.ConfigureBatchPublish(c =>
+                {
+                    c.Enabled = true;
+                    c.Timeout = TimeSpan.Zero;
+                });
+            }
+        }
+
+
         public class A
         {
             public Guid Id { get; set; }
@@ -476,49 +560,6 @@
             {
                 return Id.GetHashCode();
             }
-        }
-    }
-
-
-    [TestFixture]
-    public class When_publishing_an_interface_message :
-        RabbitMqTestFixture
-    {
-        [Test]
-        public async Task Should_have_correlation_id()
-        {
-            await InputQueueSendEndpoint.Send<IProxyMe>(new
-            {
-                IntValue,
-                StringValue,
-                CorrelationId = _correlationId
-            });
-
-            ConsumeContext<IProxyMe> message = await _handler;
-
-            message.Message.CorrelationId.ShouldBe(_correlationId);
-            message.Message.IntValue.ShouldBe(IntValue);
-            message.Message.StringValue.ShouldBe(StringValue);
-        }
-
-        const int IntValue = 42;
-        const string StringValue = "Hello";
-        readonly Guid _correlationId = Guid.NewGuid();
-        Task<ConsumeContext<IProxyMe>> _handler;
-
-        protected override void ConfigureRabbitMqReceiveEndpoint(IRabbitMqReceiveEndpointConfigurator configurator)
-        {
-            configurator.ConfigureConsumeTopology = false;
-
-            _handler = Handled<IProxyMe>(configurator);
-        }
-
-
-        public interface IProxyMe :
-            CorrelatedBy<Guid>
-        {
-            int IntValue { get; }
-            string StringValue { get; }
         }
     }
 }

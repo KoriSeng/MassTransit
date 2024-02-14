@@ -99,7 +99,9 @@ namespace MassTransit.HangfireIntegration
 
                 var serializerContext = deserializer.Deserialize(body, _messageContext, _destinationAddress);
 
-                context.MessageId = _messageContext.MessageId;
+                if (_messageContext.MessageId.HasValue)
+                    context.MessageId = _messageContext.MessageId;
+
                 context.RequestId = _messageContext.RequestId;
                 context.ConversationId = _messageContext.ConversationId;
                 context.CorrelationId = _messageContext.CorrelationId;
@@ -107,6 +109,7 @@ namespace MassTransit.HangfireIntegration
                 context.SourceAddress = _messageContext.SourceAddress;
                 context.ResponseAddress = _messageContext.ResponseAddress;
                 context.FaultAddress = _messageContext.FaultAddress;
+                context.SupportedMessageTypes = _messageContext.SupportedMessageTypes;
 
                 if (_messageContext.ExpirationTime.HasValue)
                     context.TimeToLive = _messageContext.ExpirationTime.Value.ToUniversalTime() - DateTime.UtcNow;
@@ -117,7 +120,6 @@ namespace MassTransit.HangfireIntegration
                 IReadOnlyDictionary<string, object>? transportProperties = _messageContext.TransportProperties;
                 if (transportProperties != null && context is TransportSendContext transportSendContext)
                     transportSendContext.ReadPropertiesFrom(transportProperties);
-
 
                 context.Serializer = serializerContext.GetMessageSerializer();
 

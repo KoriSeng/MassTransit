@@ -54,7 +54,7 @@ namespace MassTransit.ActiveMqTransport.Middleware
 
                 try
                 {
-                    await Dispatch(message.NMSMessageId, context, _ => new ActiveMqReceiveLockContext(message)).ConfigureAwait(false);
+                    await Dispatch(message.NMSMessageId, context, new ActiveMqReceiveLockContext(message)).ConfigureAwait(false);
                 }
                 catch (Exception exception)
                 {
@@ -77,7 +77,7 @@ namespace MassTransit.ActiveMqTransport.Middleware
 
             try
             {
-                _messageConsumer.Close();
+                await _messageConsumer.CloseAsync().ConfigureAwait(false);
                 _messageConsumer.Dispose();
             }
             catch (OperationCanceledException)

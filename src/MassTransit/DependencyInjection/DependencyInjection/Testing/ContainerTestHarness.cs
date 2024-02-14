@@ -97,6 +97,7 @@ namespace MassTransit.DependencyInjection.Testing
         public ISentMessageList Sent => _sent.Value.Messages;
 
         public IServiceScope Scope => _scope.Value;
+        public IServiceProvider Provider => _provider;
 
         public IEndpointNameFormatter EndpointNameFormatter => _provider.GetService<IEndpointNameFormatter>() ?? DefaultEndpointNameFormatter.Instance;
 
@@ -142,9 +143,19 @@ namespace MassTransit.DependencyInjection.Testing
         {
             var provider = _scope.Value.ServiceProvider.GetRequiredService<ISendEndpointProvider>();
 
-            var shortName = new Uri($"queue:{EndpointNameFormatter.Consumer<T>()}");
+            return provider.GetSendEndpoint(GetConsumerAddress<T>());
+        }
 
-            return provider.GetSendEndpoint(shortName);
+        public Uri GetConsumerAddress<T>()
+            where T : class, IConsumer
+        {
+            return new Uri($"queue:{EndpointNameFormatter.Consumer<T>()}");
+        }
+
+        public Uri GetHandlerAddress<T>()
+            where T : class
+        {
+            return GetConsumerAddress<MessageHandlerConsumer<T>>();
         }
 
         public Task<ISendEndpoint> GetSagaEndpoint<T>()
@@ -152,9 +163,13 @@ namespace MassTransit.DependencyInjection.Testing
         {
             var provider = _scope.Value.ServiceProvider.GetRequiredService<ISendEndpointProvider>();
 
-            var shortName = new Uri($"queue:{EndpointNameFormatter.Saga<T>()}");
+            return provider.GetSendEndpoint(GetSagaAddress<T>());
+        }
 
-            return provider.GetSendEndpoint(shortName);
+        public Uri GetSagaAddress<T>()
+            where T : class, ISaga
+        {
+            return new Uri($"queue:{EndpointNameFormatter.Saga<T>()}");
         }
 
         public Task<ISendEndpoint> GetExecuteActivityEndpoint<T, TArguments>()
@@ -163,9 +178,14 @@ namespace MassTransit.DependencyInjection.Testing
         {
             var provider = _scope.Value.ServiceProvider.GetRequiredService<ISendEndpointProvider>();
 
-            var shortName = new Uri($"queue:{EndpointNameFormatter.ExecuteActivity<T, TArguments>()}");
+            return provider.GetSendEndpoint(GetExecuteActivityAddress<T, TArguments>());
+        }
 
-            return provider.GetSendEndpoint(shortName);
+        public Uri GetExecuteActivityAddress<T, TArguments>()
+            where T : class, IExecuteActivity<TArguments>
+            where TArguments : class
+        {
+            return new Uri($"queue:{EndpointNameFormatter.ExecuteActivity<T, TArguments>()}");
         }
 
         public async Task Start()
